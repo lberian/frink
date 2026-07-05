@@ -1,0 +1,8 @@
+# Compilacion
+src-tauri/target/
+src-tauri/gen/
+
+# Sistema
+Thumbs.db
+desktop.ini
+.DS_Store
