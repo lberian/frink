@@ -1,0 +1,31 @@
+[package]
+name = "frink"
+version = "0.6.0"
+edition = "2021"
+authors = ["Luis Berián «lberian»"]
+license = "GPL-3.0-only"
+description = "Frink — anotaciones sobre lo que se ve en pantalla"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+xcap = "0.0.14"          # captura de pantalla
+arboard = "3"            # portapapeles (imagen)
+image = "0.25"           # codificar/decodificar PNG
+base64 = "0.22"
+chrono = "0.4"           # nombre de archivo por fecha-hora
+serde_json = "1"         # API del conector MCP
+tiny_http = "0.12"       # servidor HTTP local (conector MCP)
+ureq = { version = "2", default-features = false, features = ["json"] } # cliente del binario frink_mcp
+rfd = "0.15"             # diálogo nativo "elegir carpeta de destino"
+
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "5"      # lista de archivos en el portapapeles (modo lámina)
+
+# NOTA: si alguna versión falla al compilar, actualízala con `cargo add <crate>`
+# dentro de src-tauri/ para tomar la última publicada.
+
+[workspace]
