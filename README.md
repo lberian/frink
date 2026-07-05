@@ -9,7 +9,7 @@
 
 ## Why Frink
 
-The person behind this is an **architect — of buildings — with no programming
+The person behind this is an **architect and urban planner — with no programming
 background**. This is a defining moment for creative people; the paradigm has shifted:
 in six months I went from keeping my ideas in a notebook to building projects that
 were unthinkable to me. Now I build my own tools for a more fluid interaction. Frink

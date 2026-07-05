@@ -9,7 +9,7 @@
 
 ## Por qué Frink
 
-Quien firma esto es **arquitecto — de edificios — sin conocimientos de programación**.
+Quien firma esto es **arquitecto y urbanista — sin conocimientos de programación**.
 Vivimos un momento importante para los creativos, ha cambiado el paradigma: en seis
 meses he pasado de guardar mis ideas en una libreta a desarrollar proyectos impensables
 para mí hace seis meses. Ahora construyo herramientas propias para una interacción más
