@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src-tauri/icons/icon.png" width="110" alt="Logo de Frink" />
+</p>
+
 # Frink
 
 🇬🇧 [English version](README.md)
