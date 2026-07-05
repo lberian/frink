@@ -1,131 +1,127 @@
 # Frink
 
-**Autor: Luis Berián «lberian»** · © 2026 · Licencia [GPL-3.0](LICENSE)
+🇪🇸 [Versión en español](README.es.md)
 
-> **Frink** = **Fr**eeze + **ink**: congela lo que ves y dibuja tinta encima.
-> El nombre es el modelo de uso: *congelar-luego-anotar*.
+**Author: Luis Berián «lberian»** · © 2026 · License [GPL-3.0](LICENSE)
 
-## Por qué Frink
+> **Frink** = **Fr**eeze + **ink**: freeze what you see and draw ink on top.
+> The name is the usage model: *freeze-then-annotate*.
 
-Quien firma esto es **arquitecto — de edificios — sin conocimientos de programación**.
-La IA nos ha abierto a los creativos un mundo nuevo: en seis meses he pasado de no
-programar a desarrollar proyectos que eran impensables para mí, y hasta a crear mis
-propias herramientas para que esa colaboración sea más fluida. Frink es a la vez
-producto y prueba de ese cambio: una herramienta hecha *conversando* con la IA para
-comunicarse mejor *con* la IA.
+## Why Frink
 
-Las herramientas de captura llevan quince años diseñadas para enseñar cosas a
-*personas*: por eso todas terminan en un bitmap. Frink nace para enseñarle cosas a una
-**máquina que entiende**: cada anotación se exporta también como **datos** — un JSON con
-las coordenadas exactas de cada trazo, texto, cota y orden. La IA no interpreta tu
-garabato: lo *lee*.
+The person behind this is an **architect — of buildings — with no programming
+background**. This is a defining moment for creative people; the paradigm has shifted:
+in six months I went from keeping my ideas in a notebook to building projects that
+were unthinkable to me. Now I build my own tools for a more fluid interaction. Frink
+is both product and proof of that change: a tool made *by conversing* with AI, to
+communicate better *with* AI.
 
-Y funciona igual de bien para lo humano: anotaciones rápidas en reuniones online
-mientras alguien comparte pantalla.
+Screen-capture tools have spent fifteen years designed to show things to people —
+that's why they all end in a bitmap. Frink was born to show things to a **machine
+that understands**: every annotation is also exported as **data** — a JSON with the
+exact coordinates of every stroke, text, dimension and command. The AI doesn't
+interpret your scribble: it *reads* it.
 
-## Uso
+And it works just as well for humans: quick annotations in online meetings while
+someone shares their screen.
 
-1. **Ctrl+↑** — congela la pantalla donde esté el ratón (modo pantalla).
-2. **Ctrl+↓** — modo lámina: se abre una ventana pequeña y manejable; suéltale un
-   archivo de imagen y se expande para anotarlo a resolución completa.
-3. **Dibuja**: lápiz, rotulador, puntos rectos, spline, rectángulo, elipse (con o sin
-   relleno), texto, goma, **cota** (dos puntos + distancia real = escala) y la paleta ⚡
-   de **órdenes** (BORRA ESTO, PIXELA, ACLARA, MANTÉN ESTO, LÍNEA DE FUGA…).
-4. **Enter** — exporta. Modo pantalla: la imagen al portapapeles. Modo lámina: **los dos
-   archivos (PNG + JSON) al portapapeles** — un solo Ctrl+V en tu chat de IA adjunta
-   imagen y datos a la vez.
+## Usage
 
-`Esc` cancela · `Ctrl+Z` deshace · rueda = zoom · espacio = mover (modo lámina) ·
-atajos 1-9 para herramientas · el icono de la bandeja permite elegir la carpeta de
-destino y salir.
+1. **Ctrl+↑** — freezes the screen under your mouse (screen mode).
+2. **Ctrl+↓** — sheet mode: a small, movable window opens; drop an image file on it
+   and it expands to annotate at full native resolution.
+3. **Draw**: pen, highlighter, straight points, spline, rectangle, ellipse (outlined
+   or filled), text, eraser, **dimension** (two points + real distance = scale) and
+   the ⚡ palette of **commands** (DELETE THIS, PIXELATE, BRIGHTEN, KEEP THIS,
+   VANISHING LINE…).
+4. **Enter** — exports. Screen mode: the image goes to your clipboard. Sheet mode:
+   **both files (PNG + JSON) go to the clipboard** — a single Ctrl+V in your AI chat
+   attaches image and data at once.
 
-## Qué exporta
+`Esc` cancels · `Ctrl+Z` undoes · wheel = zoom · space = pan (sheet mode) ·
+keys 1-9 for tools · the tray icon lets you pick the output folder and quit.
 
-Pares con el mismo nombre en tu carpeta de destino (por defecto `Imágenes\Frink`):
+## What it exports
 
-- `<nombre>_frink_<fecha>.png` — la imagen anotada
-- `<nombre>_frink_<fecha>.json` — las anotaciones como datos: coordenadas float
-  sub-píxel de cada trazo, textos como texto, cotas con su longitud real, órdenes como
-  comandos declarados, y la ruta de la imagen original
+Same-name pairs in your output folder (default: `Pictures\Frink`):
 
-## La skill (para Claude)
+- `<name>_frink_<date>.png` — the annotated image
+- `<name>_frink_<date>.json` — the annotations as data: sub-pixel float coordinates
+  of every stroke, texts as text, dimensions with their real length, commands as
+  declared instructions, and the path of the original image
 
-En [`skill/`](skill/) está la **skill de Frink**: enseña a Claude a leer el JSON como
-fuente de verdad geométrica, anclar cada anotación a lo que hay debajo, convertir
-cotas en escala real (plana o por planos en perspectiva), reconstruir escenas 3D desde
-los puntos de fuga, y traducir las órdenes a herramientas concretas (máscaras de
-inpainting, datos CAD/GIS, elementos de UI). Se instala importando `skill/frink.skill`
-en Claude (Ajustes → Capacidades).
+## The skill (for Claude)
 
-## El conector MCP
+[`skill/`](skill/) contains the **Frink skill**: it teaches Claude to read the JSON
+as geometric ground truth, anchor each annotation to what lies beneath it, turn
+dimensions into real-world scale (flat images, or per-plane in perspective scenes),
+reconstruct 3D scenes from vanishing points, and translate commands into concrete
+tooling (inpainting masks, CAD/GIS data, UI elements). Install it by importing
+`skill/frink.skill` into Claude (Settings → Capabilities).
 
-Frink incluye un **conector MCP** (`frink_mcp.exe`, compilado junto a la app) que da a
-la IA tres poderes:
+## The MCP connector
 
-- `frink_latest` / `frink_list` — leer tus anotaciones directamente, sin pegar nada.
-- `frink_annotate(imagen, mensaje)` — **la IA te pide una anotación**: Frink se abre en
-  tu pantalla con la imagen y su pregunta en un banner; marcas, pulsas Enter, y le
-  llega el par con coordenadas exactas (`frink_wait` recoge el resultado). El canal
-  deja de ser de un solo sentido.
+Frink ships with an **MCP connector** (`frink_mcp.exe`, built alongside the app)
+that gives the AI three powers:
 
-Registro en Claude Desktop (`claude_desktop_config.json`, y reiniciar Claude):
+- `frink_latest` / `frink_list` — read your annotations directly, no pasting.
+- `frink_annotate(image, prompt)` — **the AI asks you for an annotation**: Frink
+  opens on your screen with the image and the AI's question in a banner; you mark it
+  up, press Enter, and the pair with exact coordinates comes back (`frink_wait`
+  collects the result). The channel stops being one-way.
+
+Register it in Claude Desktop (`claude_desktop_config.json`, then restart Claude):
 
 ```json
 "mcpServers": {
-  "frink": { "command": "C:\\ruta\\a\\frink_mcp.exe" }
+  "frink": { "command": "C:\\path\\to\\frink_mcp.exe" }
 }
 ```
 
-Todo es 100 % local: el conector habla con la app por `127.0.0.1` y nada sale de tu
-equipo salvo lo que tú pegues o la IA te pida.
+Everything is 100% local: the connector talks to the app over `127.0.0.1`, and
+nothing leaves your machine except what you paste or what the AI asks you for.
 
-## Instalación
+## Install
 
-Descarga `frink.exe` y `frink_mcp.exe` de [Releases](../../releases). Sin instalación,
-portátiles (Windows 10/11). Windows SmartScreen avisará por ser un binario sin firmar:
-"Más información → Ejecutar de todas formas".
+Download `frink.exe` and `frink_mcp.exe` from [Releases](../../releases). No
+installation, fully portable (Windows 10/11). Windows SmartScreen will warn about
+the unsigned binary: "More info → Run anyway".
 
-### Compilar desde el código
+### Build from source
 
-[Rust](https://rustup.rs) + `cargo install tauri-cli --version "^2"`, y desde
+[Rust](https://rustup.rs) + `cargo install tauri-cli --version "^2"`, then from
 `src-tauri/`:
 
 ```bash
-cargo tauri build --no-bundle   # genera target/release/frink.exe y frink_mcp.exe
+cargo tauri build --no-bundle   # produces target/release/frink.exe and frink_mcp.exe
 ```
 
-Sin Node ni npm: el frontend son 3 archivos estáticos con el Tauri global.
+No Node, no npm: the frontend is 3 static files using the global Tauri object.
 
-## Estructura
+## Structure
 
 ```
 frink/
-├─ src/                      # frontend estático (sin bundler)
+├─ src/                      # static frontend (no bundler)
 │  ├─ index.html
-│  ├─ main.js                # herramientas, vista, exportación PNG+JSON
+│  ├─ main.js                # tools, view transform, PNG+JSON export
 │  └─ style.css
 ├─ src-tauri/
-│  ├─ src/main.rs            # captura, lámina, bandeja, API local del conector
-│  ├─ src/bin/frink_mcp.rs   # conector MCP (stdio) para Claude
+│  ├─ src/main.rs            # capture, sheet mode, tray, connector's local API
+│  ├─ src/bin/frink_mcp.rs   # MCP connector (stdio) for Claude
 │  ├─ Cargo.toml · tauri.conf.json · capabilities/ · icons/
-└─ skill/                    # skill de Frink para Claude (SKILL.md + frink.skill)
+└─ skill/                    # Frink skill for Claude (SKILL.md + frink.skill)
 ```
 
-## Hoja de ruta
+## Roadmap
 
-Hecho: dos modos · 9 herramientas + cotas + órdenes · zoom/mano · sub-píxel · multi-
-monitor · bandeja · carpeta configurable · "Abrir con Frink" · buzón · conector MCP
-bidireccional · skill.
+Done: two modes · 9 tools + dimensions + commands · zoom/pan · sub-pixel ·
+multi-monitor · tray · configurable output folder · "Open with Frink" · inbox ·
+bidirectional MCP connector · skill.
 
-Ideas: pixelado/desenfoque local (privacidad antes de compartir) · parche de
-brillo/contraste · clonar fondo · índice histórico · IDs estables anotación→entidad.
-
-## Idea de diseño
-
-La única pieza visual "con personalidad" es el **marco salmón** (`--salmon` en
-`style.css`): indicador de activo y selector de zona a la vez. Todo lo demás es
-discreto a propósito; la firma va en un solo sitio.
+Ideas: local pixelate/blur (privacy before sharing) · brightness/contrast patch ·
+background cloning · history index · stable annotation→entity IDs.
 
 ---
 
-Licencia GPL-3.0 · para licencias comerciales, contactar con el autor.
+GPL-3.0 license · for commercial licensing, contact the author.
