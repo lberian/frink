@@ -105,6 +105,15 @@ nada que inferir; ejecuta o traduce directamente:
 | horizonte | la guía ES el horizonte de la escena (fija altura de cámara) |
 | cine_guia | rectificar/ajustar la geometría cercana a esta guía (enderezar, alinear) |
 
+**Desde frink 0.7 Frink EJECUTA él mismo** `borra` (relleno con el entorno),
+`blur` (pixelado), `aclara`, `oscurece`, `mas_color`, `menos_color`, `cambia_color`
+y `manten` (que protege su zona de los demás efectos): el PNG que recibes YA muestra
+el resultado y no lleva contorno ni etiqueta de esas órdenes; el JSON las documenta.
+No repitas el efecto: tu trabajo con ellas es refinar si se pide (p. ej. un `borra`
+fotorrealista con inpainting usando el mismo polígono como máscara sobre la imagen
+original de `source_path`). Las órdenes `reemplaza`, `pregunta`, `linea_fuga`,
+`horizonte` y `cine_guia` siguen siendo SOLO para la IA: esas sí te toca ejecutarlas.
+
 `kind: "area"` = polígono cerrado (la máscara); `kind: "line"` = guía (polilínea).
 Las órdenes conviven con trazos libres: primero ejecuta las órdenes, después interpreta
 el resto con el protocolo general.
@@ -182,6 +191,8 @@ fugas), las anotaciones viven en 2D pero REFIEREN a un espacio 3D. Antes de trad
 
 Si existen las herramientas `frink_latest`, `frink_list`, `frink_annotate` y `frink_wait`:
 
+- Desde 0.7 el pegado lleva siempre PNG + JSON también en modo pantalla, y
+  `frink_latest`/`frink_list` ordenan por fecha real del archivo.
 - `frink_latest` / `frink_list` sustituyen al buzón y al pegado: consulta directa de los
   pares PNG+JSON (la respuesta incluye rutas y el JSON completo; lee el PNG desde su ruta
   si necesitas verlo).
