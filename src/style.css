@@ -26,6 +26,12 @@ body.lamina {
   user-select: none;
 }
 
+#fx {
+  position: fixed;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 #board {
   position: fixed;
 }
@@ -253,6 +259,14 @@ body.dropmode #ordermenu { display: none; }
   padding: 7px 14px;
   border-radius: 7px;
   cursor: pointer;
+}
+
+#ordermenu .om-head {
+  font: 700 10.5px/1 system-ui, -apple-system, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #e0435f;
+  padding: 9px 14px 4px;
 }
 
 #ordermenu button:hover {

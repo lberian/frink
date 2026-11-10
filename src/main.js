@@ -10,6 +10,8 @@ const { getCurrentWebview } = window.__TAURI__.webview;
 
 const appWindow = getCurrentWindow();
 const bg = document.getElementById("bg");
+const fxc = document.getElementById("fx"); // fondo con los efectos de las órdenes aplicados
+const fxctx = fxc.getContext("2d");
 const board = document.getElementById("board");
 const sel = document.getElementById("selection");
 const hint = document.getElementById("hint");
@@ -80,7 +82,7 @@ const inView = (e) =>
   e.clientY >= view.oy && e.clientY <= view.oy + view.dh;
 
 function applyView() {
-  for (const el of [bg, board]) {
+  for (const el of [bg, fxc, board]) {
     el.style.left = view.ox + "px";
     el.style.top = view.oy + "px";
     el.style.width = view.dw + "px";
@@ -125,11 +127,14 @@ window.addEventListener("resize", layout);
 function setupBoard() {
   board.width = bg.naturalWidth;
   board.height = bg.naturalHeight;
+  fxc.width = bg.naturalWidth;
+  fxc.height = bg.naturalHeight;
   redraw();
 }
 
 function onBgLoad() {
   bgReady = true;
+  fxSig = "";
   layout();
   setupBoard();
   updateHint();
@@ -206,7 +211,282 @@ function drawLabel(c, x, y, text, color, px) {
   c.restore();
 }
 
-function renderShape(c, s) {
+
+// ================== Órdenes que SE EJECUTAN sobre la imagen ==================
+// Estas órdenes no son solo una etiqueta para la IA: aplican el efecto de verdad
+// sobre el fondo, dentro del polígono dibujado. Siguen yendo al JSON igualmente.
+const EFFECT_ORDERS = new Set([
+  "borra", "blur", "aclara", "oscurece", "mas_color", "menos_color", "cambia_color",
+]);
+const isEffect = (s) =>
+  s.type === "order" && EFFECT_ORDERS.has(s.order) && s.points && s.points.length > 2;
+
+function polyBBox(pts, W, H, pad = 0) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const p of pts) {
+    if (p.x < x1) x1 = p.x; if (p.y < y1) y1 = p.y;
+    if (p.x > x2) x2 = p.x; if (p.y > y2) y2 = p.y;
+  }
+  const px = (x2 - x1) * pad, py = (y2 - y1) * pad;
+  x1 = Math.max(0, Math.floor(x1 - px)); y1 = Math.max(0, Math.floor(y1 - py));
+  x2 = Math.min(W, Math.ceil(x2 + px)); y2 = Math.min(H, Math.ceil(y2 + py));
+  return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
+}
+
+function newCanvas(w, h) {
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(w));
+  cv.height = Math.max(1, Math.round(h));
+  return cv;
+}
+
+function tracePoly(c, pts, ox = 0, oy = 0) {
+  c.beginPath();
+  c.moveTo(pts[0].x - ox, pts[0].y - oy);
+  for (const p of pts.slice(1)) c.lineTo(p.x - ox, p.y - oy);
+  c.closePath();
+}
+
+// Máscara del polígono dentro de su bbox (alpha 0..255)
+function polyMask(pts, b) {
+  const m = newCanvas(b.w, b.h);
+  const mc = m.getContext("2d");
+  mc.fillStyle = "#fff";
+  tracePoly(mc, pts, b.x, b.y);
+  mc.fill();
+  return mc.getImageData(0, 0, b.w, b.h).data;
+}
+
+// Ajuste por píxel (brillo/saturación/color) solo dentro del polígono
+function pixelEffect(c, s, W, H) {
+  const b = polyBBox(s.points, W, H);
+  if (b.w < 1 || b.h < 1) return;
+  const mask = polyMask(s.points, b);
+  const img = c.getImageData(b.x, b.y, b.w, b.h);
+  const d = img.data;
+  let tr = 0, tg = 0, tb = 0;
+  if (s.order === "cambia_color") {
+    const hx = (s.target_color || s.color || "#ff0000").replace("#", "");
+    tr = parseInt(hx.slice(0, 2), 16); tg = parseInt(hx.slice(2, 4), 16); tb = parseInt(hx.slice(4, 6), 16);
+  }
+  const tl = 0.299 * tr + 0.587 * tg + 0.114 * tb || 1;
+  for (let i = 0; i < d.length; i += 4) {
+    const a = mask[i + 3] / 255;
+    if (a === 0) continue;
+    let r = d[i], g = d[i + 1], bl = d[i + 2];
+    let nr = r, ng = g, nb = bl;
+    const L = 0.299 * r + 0.587 * g + 0.114 * bl;
+    switch (s.order) {
+      case "aclara":   nr = r + (255 - r) * 0.45; ng = g + (255 - g) * 0.45; nb = bl + (255 - bl) * 0.45; break;
+      case "oscurece": nr = r * 0.5; ng = g * 0.5; nb = bl * 0.5; break;
+      case "mas_color":   nr = L + (r - L) * 1.9; ng = L + (g - L) * 1.9; nb = L + (bl - L) * 1.9; break;
+      case "menos_color": nr = L + (r - L) * 0.15; ng = L + (g - L) * 0.15; nb = L + (bl - L) * 0.15; break;
+      case "cambia_color": { // conserva la luz, adopta el color
+        const k = L / tl;
+        nr = tr * k; ng = tg * k; nb = tb * k; break;
+      }
+    }
+    d[i] = r + (Math.min(255, Math.max(0, nr)) - r) * a;
+    d[i + 1] = g + (Math.min(255, Math.max(0, ng)) - g) * a;
+    d[i + 2] = bl + (Math.min(255, Math.max(0, nb)) - bl) * a;
+  }
+  c.putImageData(img, b.x, b.y);
+}
+
+// PIXELA: mosaico dentro del polígono. La reducción se hace a mitades sucesivas
+// para PROMEDIAR de verdad (un texto pixelado queda ilegible, no "muestreado").
+function downscaleAvg(src, sx, sy, sw, sh, tw, th) {
+  let cur = newCanvas(sw, sh);
+  cur.getContext("2d").drawImage(src, sx, sy, sw, sh, 0, 0, sw, sh);
+  while (cur.width / 2 >= tw && cur.height / 2 >= th) {
+    const nx = newCanvas(Math.ceil(cur.width / 2), Math.ceil(cur.height / 2));
+    const c2 = nx.getContext("2d");
+    c2.imageSmoothingEnabled = true;
+    c2.imageSmoothingQuality = "high";
+    c2.drawImage(cur, 0, 0, nx.width, nx.height);
+    cur = nx;
+  }
+  const out = newCanvas(tw, th);
+  const oc = out.getContext("2d");
+  oc.imageSmoothingEnabled = true;
+  oc.imageSmoothingQuality = "high";
+  oc.drawImage(cur, 0, 0, tw, th);
+  return out;
+}
+
+function pixelate(c, s, W, H) {
+  const b = polyBBox(s.points, W, H);
+  if (b.w < 2 || b.h < 2) return;
+  const block = Math.max(8, Math.round(Math.max(b.w, b.h) / 24));
+  const tw = Math.max(1, Math.ceil(b.w / block)), th = Math.max(1, Math.ceil(b.h / block));
+  const small = downscaleAvg(c.canvas, b.x, b.y, b.w, b.h, tw, th);
+  c.save();
+  tracePoly(c, s.points);
+  c.clip();
+  c.imageSmoothingEnabled = false;
+  c.drawImage(small, 0, 0, tw, th, b.x, b.y, tw * block, th * block);
+  c.restore();
+  c.imageSmoothingEnabled = true;
+}
+
+// BORRA: elimina el contenido y lo rellena con el entorno (relleno push-pull:
+// promedia hacia dentro los colores del borde, sin rastro del objeto)
+function eraseFill(c, s, W, H) {
+  const b = polyBBox(s.points, W, H, 0.35);
+  if (b.w < 2 || b.h < 2) return;
+  const base = newCanvas(b.w, b.h);
+  const bc = base.getContext("2d");
+  bc.drawImage(c.canvas, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
+  // agujero: fuera el contenido del polígono (algo dilatado para no arrastrar bordes)
+  bc.globalCompositeOperation = "destination-out";
+  bc.lineWidth = Math.max(4, Math.min(b.w, b.h) * 0.03);
+  bc.lineJoin = "round";
+  tracePoly(bc, s.points, b.x, b.y);
+  bc.fill();
+  bc.stroke();
+  bc.globalCompositeOperation = "source-over";
+  // pirámide: bajar a 1 px y volver rellenando huecos con el nivel grueso
+  const levels = [base];
+  while (levels[levels.length - 1].width > 1 || levels[levels.length - 1].height > 1) {
+    const prev = levels[levels.length - 1];
+    const nx = newCanvas(Math.max(1, prev.width >> 1), Math.max(1, prev.height >> 1));
+    const ncx = nx.getContext("2d");
+    ncx.imageSmoothingEnabled = true;
+    ncx.drawImage(prev, 0, 0, nx.width, nx.height);
+    levels.push(nx);
+  }
+  for (let i = levels.length - 2; i >= 0; i--) {
+    const lv = levels[i].getContext("2d");
+    lv.globalCompositeOperation = "destination-over";
+    lv.imageSmoothingEnabled = true;
+    // varias pasadas: el nivel grueso rellena lo que quede semitransparente
+    for (let k = 0; k < 3; k++) lv.drawImage(levels[i + 1], 0, 0, levels[i].width, levels[i].height);
+    lv.globalCompositeOperation = "source-over";
+  }
+  // Refinado: difusión armónica dentro del hueco, resuelta de lo grueso a lo
+  // fino (multimalla): reconstruye los degradados del entorno sin fantasmas.
+  const holeAt = (gw, gh) => {
+    const sc = gw / b.w;
+    const hole = newCanvas(gw, gh), hc = hole.getContext("2d");
+    hc.fillStyle = "#fff"; hc.strokeStyle = "#fff";
+    hc.lineWidth = Math.max(1, bc.lineWidth * sc);
+    hc.save(); hc.scale(sc, gh / b.h); tracePoly(hc, s.points, b.x, b.y); hc.restore();
+    hc.fill(); hc.stroke();
+    return hc.getImageData(0, 0, gw, gh).data;
+  };
+  const maxSide = Math.max(b.w, b.h);
+  const finest = Math.min(1, 180 / maxSide);
+  const scales = [];
+  for (let s2 = finest; Math.max(b.w, b.h) * s2 >= 12; s2 /= 2) scales.unshift(s2);
+  if (!scales.length) scales.push(finest);
+  let prev = null;
+  let g = null;
+  for (const sc of scales) {
+    const gw = Math.max(3, Math.round(b.w * sc)), gh = Math.max(3, Math.round(b.h * sc));
+    g = newCanvas(gw, gh);
+    const gc = g.getContext("2d");
+    gc.imageSmoothingEnabled = true;
+    gc.drawImage(levels[0], 0, 0, gw, gh);           // entorno real (y relleno inicial)
+    const hm = holeAt(gw, gh);
+    if (prev) {                                       // dentro del hueco: parte del nivel grueso
+      const up = newCanvas(gw, gh), uc = up.getContext("2d");
+      uc.imageSmoothingEnabled = true;
+      uc.drawImage(prev, 0, 0, gw, gh);
+      const ud = uc.getImageData(0, 0, gw, gh).data;
+      const gi0 = gc.getImageData(0, 0, gw, gh);
+      for (let i = 0; i < hm.length; i += 4) if (hm[i + 3] > 0) {
+        gi0.data[i] = ud[i]; gi0.data[i + 1] = ud[i + 1]; gi0.data[i + 2] = ud[i + 2];
+      }
+      gc.putImageData(gi0, 0, 0);
+    }
+    const gi = gc.getImageData(0, 0, gw, gh), gd = gi.data;
+    const idx = [];
+    for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++)
+      if (hm[(y * gw + x) * 4 + 3] > 0) idx.push((y * gw + x) * 4);
+    const row = gw * 4;
+    for (let it = 0; it < 250; it++) {
+      for (const i of idx) for (let ch = 0; ch < 3; ch++)
+        gd[i + ch] = (gd[i - 4 + ch] + gd[i + 4 + ch] + gd[i - row + ch] + gd[i + row + ch]) / 4;
+    }
+    gc.putImageData(gi, 0, 0);
+    prev = g;
+  }
+  // Pasada final a resolución completa: costura invisible con el entorno.
+  const F = newCanvas(b.w, b.h), Fc = F.getContext("2d");
+  Fc.drawImage(levels[0], 0, 0);
+  const hmF = holeAt(b.w, b.h);
+  const up = newCanvas(b.w, b.h), upc = up.getContext("2d");
+  upc.imageSmoothingEnabled = true;
+  upc.imageSmoothingQuality = "high";
+  upc.drawImage(g, 0, 0, b.w, b.h);
+  const ud = upc.getImageData(0, 0, b.w, b.h).data;
+  const Fi = Fc.getImageData(0, 0, b.w, b.h), Fd = Fi.data;
+  const fidx = [];
+  for (let y = 1; y < b.h - 1; y++) for (let x = 1; x < b.w - 1; x++) {
+    const i = (y * b.w + x) * 4;
+    if (hmF[i + 3] > 0) {
+      Fd[i] = ud[i]; Fd[i + 1] = ud[i + 1]; Fd[i + 2] = ud[i + 2]; Fd[i + 3] = 255;
+      fidx.push(i);
+    }
+  }
+  const frow = b.w * 4;
+  const iters = fidx.length < 400000 ? 80 : 20;
+  for (let it = 0; it < iters; it++) {
+    // alternar el sentido del barrido evita sesgos diagonales
+    if (it % 2 === 0) {
+      for (let k = 0; k < fidx.length; k++) { const i = fidx[k];
+        for (let ch = 0; ch < 3; ch++) Fd[i + ch] = (Fd[i - 4 + ch] + Fd[i + 4 + ch] + Fd[i - frow + ch] + Fd[i + frow + ch]) / 4; }
+    } else {
+      for (let k = fidx.length - 1; k >= 0; k--) { const i = fidx[k];
+        for (let ch = 0; ch < 3; ch++) Fd[i + ch] = (Fd[i - 4 + ch] + Fd[i + 4 + ch] + Fd[i - frow + ch] + Fd[i + frow + ch]) / 4; }
+    }
+  }
+  Fc.putImageData(Fi, 0, 0);
+  // composición: F ya contiene el original fuera del hueco, sin costuras
+  c.save();
+  tracePoly(c, s.points);
+  c.clip();
+  c.drawImage(F, b.x, b.y);
+  c.restore();
+}
+
+// Fondo final = imagen + efectos de las órdenes, respetando MANTÉN ESTO
+function renderBase(c) {
+  const W = c.canvas.width, H = c.canvas.height;
+  c.clearRect(0, 0, W, H);
+  c.drawImage(bg, 0, 0, W, H);
+  let any = false;
+  for (const s of shapes) {
+    if (!isEffect(s)) continue;
+    any = true;
+    if (s.order === "borra") eraseFill(c, s, W, H);
+    else if (s.order === "blur") pixelate(c, s, W, H);
+    else pixelEffect(c, s, W, H);
+  }
+  if (!any) return false;
+  // MANTÉN ESTO: esas zonas vuelven a la imagen original
+  for (const s of shapes) {
+    if (s.type === "order" && s.order === "manten" && s.points.length > 2) {
+      c.save();
+      tracePoly(c, s.points);
+      c.clip();
+      c.clearRect(0, 0, W, H);
+      c.drawImage(bg, 0, 0, W, H);
+      c.restore();
+    }
+  }
+  return true;
+}
+
+function refreshFx() {
+  if (!bgReady || !fxc.width) return;
+  const any = shapes.some(isEffect);
+  fxc.style.visibility = any ? "visible" : "hidden";
+  if (any) renderBase(fxctx);
+}
+// ==============================================================================
+
+function renderShape(c, s, forExport = false) {
   c.save();
   c.lineCap = "round";
   c.lineJoin = "round";
@@ -281,6 +561,9 @@ function renderShape(c, s) {
       (s.note ? " · " + s.note : "");
     drawLabel(c, (p1.x + p2.x) / 2 + nx * t * 2, (p1.y + p2.y) / 2 + ny * t * 2, label, s.color, s.lpx);
   } else if (s.type === "order") {
+    // las órdenes ejecutadas ya se ven en la imagen: en el PNG exportado no
+    // llevan contorno ni etiqueta (quedan documentadas en el JSON)
+    if (forExport && (isEffect(s) || s.order === "manten")) { c.restore(); return; }
     c.setLineDash([s.lpx * 0.7, s.lpx * 0.45]);
     c.beginPath();
     c.moveTo(s.points[0].x, s.points[0].y);
@@ -288,9 +571,11 @@ function renderShape(c, s) {
     if (s.kind === "area" && s.points.length > 2) {
       c.closePath();
       c.stroke();
-      c.globalAlpha = 0.1;
-      c.fill();
-      c.globalAlpha = 1;
+      if (!isEffect(s)) { // relleno suave solo en las órdenes para la IA
+        c.globalAlpha = 0.1;
+        c.fill();
+        c.globalAlpha = 1;
+      }
     } else {
       c.stroke();
     }
@@ -305,7 +590,21 @@ function renderShape(c, s) {
   c.restore();
 }
 
+// Los efectos se recalculan solo cuando cambia el conjunto de órdenes terminadas
+// (no en cada movimiento del ratón mientras se dibuja una).
+let fxSig = "";
+function effectSignature() {
+  const done = shapes.filter(
+    (s) => (isEffect(s) || (s.type === "order" && s.order === "manten")) &&
+      !(mode === "order" && s === current)
+  );
+  return (bg.src || "").length + "|" + done.map((s) =>
+    s.order + ":" + s.points.length + ":" + (s.target_color || "") + ":" +
+    Math.round(s.points[0].x) + "," + Math.round(s.points[0].y)).join(";");
+}
 function redraw() {
+  const sig = effectSignature();
+  if (sig !== fxSig) { fxSig = sig; refreshFx(); }
   ctx.clearRect(0, 0, board.width, board.height);
   for (const s of shapes) renderShape(ctx, s);
   if (dimState && dimState.cursor) {
@@ -490,7 +789,9 @@ board.addEventListener("mousedown", (e) => {
   if (e.button !== 0 || !bgReady || spaceDown || panning) return;
   if (capMode === "image" && !inView(e) && !selecting) return;
 
-  const needSelect = capMode === "screen" ? !region : selecting;
+  // En los dos modos se dibuja directamente sobre todo: la zona de recorte es
+  // OPCIONAL (tecla R o botón ⛶). Sin zona, se exporta la pantalla completa.
+  const needSelect = selecting;
   if (needSelect) {
     mode = "select";
     startImg = toPhys(e);
@@ -667,10 +968,11 @@ window.addEventListener("mouseup", () => {
     const ob = document.getElementById("orders");
     if (ob) ob.classList.remove("active");
     updateHint();
-    redraw();
   }
+  const wasOrder = mode === "order";
   mode = null;
   current = null;
+  if (wasOrder) redraw(); // ahora sí: aplica el efecto de la orden recién cerrada
 });
 
 // ---------- Input flotante genérico (cota, texto de orden) ----------
@@ -837,16 +1139,16 @@ function updateHint() {
   let base;
   if (pendingOrder) {
     const o = ORDERS[pendingOrder.id];
+    const ejecuta = EFFECT_ORDERS.has(pendingOrder.id) || pendingOrder.id === "manten";
     hint.textContent =
       "Orden " + o.label + " — " +
       (o.kind === "line" ? "traza la guía (arrastra)" : "rodea la zona (arrastra)") +
+      (ejecuta ? " · se aplica al soltar" : " · la ejecutará la IA") +
       " · Esc cancela";
     return;
   }
   if (capMode === "image" && !bgReady) {
     base = "Suelta una imagen o haz clic en el panel";
-  } else if (capMode === "screen" && !region) {
-    base = HINTS.select;
   } else if (selecting) {
     base = HINTS.select;
   } else {
@@ -854,7 +1156,7 @@ function updateHint() {
   }
   const exp = capMode === "image"
     ? "rueda = zoom · espacio = mover · Enter = exportar PNG+JSON"
-    : "Enter = capturar · Esc = salir";
+    : (region ? "Enter = exportar la zona" : "Enter = exportar pantalla completa · R = recortar una zona") + " · Esc = salir";
   hint.textContent = base + " · " + exp;
 }
 
@@ -886,11 +1188,23 @@ sizeSlider.addEventListener("input", () => {
 // Menú de órdenes (se construye desde ORDERS)
 const ordersBtn = document.getElementById("orders");
 const orderMenu = document.getElementById("ordermenu");
-for (const [id, o] of Object.entries(ORDERS)) {
-  const b = document.createElement("button");
-  b.dataset.order = id;
-  b.textContent = o.label + (o.kind === "line" ? "  ⟋" : "");
-  orderMenu.appendChild(b);
+// Dos grupos honestos: lo que Frink ejecuta ya mismo y lo que solo puede hacer una IA
+const ORDER_GROUPS = [
+  ["Se aplica ya en la imagen", ["borra", "blur", "aclara", "oscurece", "mas_color", "menos_color", "cambia_color", "manten"]],
+  ["Para la IA (va en el JSON)", ["reemplaza", "pregunta", "linea_fuga", "horizonte", "cine_guia"]],
+];
+for (const [title, ids] of ORDER_GROUPS) {
+  const h = document.createElement("div");
+  h.className = "om-head";
+  h.textContent = title;
+  orderMenu.appendChild(h);
+  for (const id of ids) {
+    const o = ORDERS[id];
+    const b = document.createElement("button");
+    b.dataset.order = id;
+    b.textContent = o.label + (o.kind === "line" ? "  ⟋" : "");
+    orderMenu.appendChild(b);
+  }
 }
 orderMenu.addEventListener("mousedown", (e) => e.stopPropagation());
 orderMenu.addEventListener("click", (e) => {
@@ -1037,14 +1351,18 @@ async function exportar() {
   octx.imageSmoothingEnabled = true;
   octx.imageSmoothingQuality = "high";
 
-  octx.drawImage(bg, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);
+  // fondo con los efectos de las órdenes ya aplicados (borra, pixela, aclara…)
+  const baseCv = newCanvas(bg.naturalWidth, bg.naturalHeight);
+  const baseCtx = baseCv.getContext("2d");
+  const hasFx = renderBase(baseCtx);
+  octx.drawImage(hasFx ? baseCv : bg, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);
 
   const ink = document.createElement("canvas");
   ink.width = out.width;
   ink.height = out.height;
   const ictx = ink.getContext("2d");
   ictx.setTransform(K, 0, 0, K, -r.x * K, -r.y * K);
-  for (const s of shapes) renderShape(ictx, s);
+  for (const s of shapes) renderShape(ictx, s, true);
   octx.drawImage(ink, 0, 0);
 
   const dataUrl = out.toDataURL("image/png");
@@ -1059,7 +1377,7 @@ async function exportar() {
       folder: DEST_FOLDER,
       json: buildJson(r),
       baseName: stem,
-      asFiles: capMode === "image",
+      asFiles: true, // PNG + JSON (+ imagen) en los dos modos
     });
     console.log("Guardado en", saved);
   } catch (err) {
