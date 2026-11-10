@@ -1,4 +1,4 @@
-// Frink (Freeze + ink) v0.4 — backend Tauri
+// Frink (Freeze + ink) v0.7 — backend Tauri
 // El nombre es el modelo: congelar la pantalla, entintar encima.
 // Modos: pantalla (Ctrl+Flecha arriba) y lámina (Ctrl+Flecha abajo): anotar un
 // archivo de imagen a resolución nativa; exporta PNG + JSON con coordenadas exactas.
@@ -162,23 +162,38 @@ fn deliver(
         }
     }
 
-    if as_files.unwrap_or(false) {
-        // Portapapeles = lista de archivos (PNG + JSON): Ctrl+V adjunta los dos.
-        #[cfg(windows)]
-        {
-            use clipboard_win::Setter as _;
-            let mut files = vec![png_path.to_string_lossy().to_string()];
-            if let Some(p) = &json_path {
-                files.push(p.to_string_lossy().to_string());
-            }
-            let _clip = clipboard_win::Clipboard::new_attempts(10)
-                .map_err(|e| format!("abrir portapapeles: {e:?}"))?;
-            clipboard_win::formats::FileList
-                .write_clipboard(&files[..])
-                .map_err(|e| format!("portapapeles (archivos): {e:?}"))?;
+    // Portapapeles con TODO a la vez (los dos modos):
+    //  - lista de archivos PNG + JSON  -> al pegar en Claude se adjuntan ambos (datos)
+    //  - la imagen (bitmap)            -> para pegar en WhatsApp, Word, Paint...
+    // Cada aplicación toma el formato que entiende.
+    let _ = as_files; // compatibilidad: el frontend antiguo lo enviaba
+    #[cfg(windows)]
+    {
+        use clipboard_win::Setter as _;
+        let mut files = vec![png_path.to_string_lossy().to_string()];
+        if let Some(p) = &json_path {
+            files.push(p.to_string_lossy().to_string());
         }
-    } else {
-        // Portapapeles = imagen (pegado visual instantáneo)
+        // BMP 24 bits para el bitmap
+        let mut bmp = Cursor::new(Vec::new());
+        let bmp_ok = image::load_from_memory(&bytes)
+            .map(|im| image::DynamicImage::ImageRgb8(im.to_rgb8()))
+            .and_then(|im| im.write_to(&mut bmp, image::ImageFormat::Bmp))
+            .is_ok();
+        let _clip = clipboard_win::Clipboard::new_attempts(10)
+            .map_err(|e| format!("abrir portapapeles: {e:?}"))?;
+        clipboard_win::raw::empty().map_err(|e| format!("vaciar portapapeles: {e:?}"))?;
+        clipboard_win::formats::FileList
+            .write_clipboard(&files[..])
+            .map_err(|e| format!("portapapeles (archivos): {e:?}"))?;
+        if bmp_ok {
+            // si el bitmap fallase, los archivos ya están: no es error fatal
+            let bmp_bytes: Vec<u8> = bmp.into_inner(); // Vec<u8>: tamaño conocido (Setter<T: Sized>)
+            let _ = clipboard_win::formats::Bitmap.write_clipboard(&bmp_bytes);
+        }
+    }
+    #[cfg(not(windows))]
+    {
         let rgba = image::load_from_memory(&bytes)
             .map_err(|e| e.to_string())?
             .to_rgba8();
@@ -341,8 +356,15 @@ fn list_pairs(app: &tauri::AppHandle, n: usize, contains: &str) -> serde_json::V
                     .collect()
             })
             .unwrap_or_default();
-        jsons.sort();
-        jsons.reverse(); // el timestamp del nombre ordena cronológicamente
+        // Más recientes primero por FECHA REAL del archivo (no por nombre:
+        // "lamina_…" iba delante de "captura_…" aunque fuese más antigua).
+        jsons.sort_by_key(|p| {
+            std::cmp::Reverse(
+                std::fs::metadata(p)
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            )
+        });
         for p in jsons.into_iter().take(n) {
             let png = p.with_extension("png");
             let content = std::fs::read_to_string(&p)
